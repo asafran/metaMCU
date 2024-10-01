@@ -1,0 +1,3 @@
+[submodule "examples/metaMCU_templateF407Project"]
+	path = examples/metaMCU_templateF407Project
+	url = git@github.com:asafran/metaMCU_templateF407Project.git
