@@ -11,7 +11,7 @@ set(CMAKE_CXX_EXTENSIONS ON)
 option(METAMCU_BUILD_EXAMPLES "Build examples" OFF)
 
 if(DEFINED METAMCU_BUILD_EXAMPLES)
-    add_subdirectory(examples/TemplateF407Project)
+    add_subdirectory(examples/metaMCU_templateF407Project)
 endif()
     
 set(METAMCU_INCLUDE_DIRECTORIES core utils)
