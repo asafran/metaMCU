@@ -15,5 +15,8 @@ if(DEFINED METAMCU_BUILD_EXAMPLES)
 endif()
     
 set(METAMCU_INCLUDE_DIRECTORIES core utils)
+
 add_library(metaMCU INTERFACE)
+add_library(metaMCU::metaMCU ALIAS metaMCU)
+
 target_include_directories(metaMCU INTERFACE ${METAMCU_INCLUDE_DIRECTORIES})
