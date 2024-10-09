@@ -3,7 +3,10 @@
 
 #include <concepts>
 
-enum PinConfiguration
+template <typename Pin, typename SpecializationKey = Pin::SpecializationKey>
+struct PinsConfiguration {};
+
+enum PinMode
 {
     ANALOG_INPUT,
     FLOAT_INPUT,
@@ -28,39 +31,44 @@ enum PinPolicy
     PIN_NON_CONFIGURABLE
 };
 
-template<PinConfiguration mode, PinStrenght strenght>
+template<typename Configuration>
 concept PinConfiguredAsInput = requires {
-    requires mode == FLOAT_INPUT || mode == PULLUP_INPUT || mode == PULLDOWN_INPUT;
+    requires Configuration::mode == FLOAT_INPUT ||
+             Configuration::mode == PULLUP_INPUT ||
+             Configuration::mode == PULLDOWN_INPUT;
 };
 
-template<PinConfiguration mode, PinStrenght strenght>
+template<typename Configuration>
 concept PinConfiguredAsAnalog = requires {
-    requires mode == ANALOG_INPUT;
+    requires Configuration::mode == ANALOG_INPUT;
 };
 
-template<PinConfiguration mode, PinStrenght strenght>
+template<typename Configuration>
 concept PinConfiguredAsOutput = requires {
-    requires mode == PUSHPULL_OUTPUT || mode == OPENDRAIN_OUTPUT || mode == AUX_PUSHPULL_OUTPUT || mode == AUX_OPENDRAIN_OUTPUT;
+    requires Configuration::mode == PUSHPULL_OUTPUT ||
+             Configuration::mode == OPENDRAIN_OUTPUT ||
+             Configuration::mode == AUX_PUSHPULL_OUTPUT ||
+             Configuration::mode == AUX_OPENDRAIN_OUTPUT;
 };
 
-template<typename Pin>
+template<typename Configuration>
 concept CanConfigure = requires {
-    requires Pin::Policy == PIN_CONFIGURABLE;
+    requires Configuration::Policy == PIN_CONFIGURABLE;
 };
 
 template<typename Pin>
-concept CanInput = CanConfigure<Pin> || PinConfiguredAsInput<Pin::Mode, Pin::Strenght>;
+concept CanInput = CanConfigure<PinsConfiguration<Pin>> || PinConfiguredAsInput<PinsConfiguration<Pin>>;
 
 template<typename Pin>
-concept CanAnalog = CanConfigure<Pin> || PinConfiguredAsAnalog<Pin::Mode, Pin::Strenght>;
+concept CanAnalog = CanConfigure<PinsConfiguration<Pin>> || PinConfiguredAsAnalog<PinsConfiguration<Pin>>;
 
 template<typename Pin>
-concept CanOutput = CanConfigure<Pin> || PinConfiguredAsOutput<Pin::Mode, Pin::Strenght>;
+concept CanOutput = CanConfigure<PinsConfiguration<Pin>> || PinConfiguredAsOutput<PinsConfiguration<Pin>>;
 
-template<PinConfiguration mode, PinStrenght strenght = NORMAL_STR, PinPolicy policy = PIN_NON_CONFIGURABLE>
+template<PinMode mode, PinStrenght strenght = NORMAL_STR, PinPolicy policy = PIN_NON_CONFIGURABLE>
 struct StartupConfiguration
 {
-    constexpr static PinConfiguration Mode = mode;
+    constexpr static PinMode Mode = mode;
     constexpr static PinStrenght Strenght = strenght;
     constexpr static PinPolicy Policy = policy;
 };

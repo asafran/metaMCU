@@ -19,7 +19,7 @@ concept CompatibleInterface = IsFieldValue<typename Interface::HighOutputValue> 
 };
 */
 
-template<typename Configuration, typename Pin>
+template<typename Pin>
     //requires CompatibleInterface<Interface<GPIO, pinNum>>
 class Pins
 {
