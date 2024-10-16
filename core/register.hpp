@@ -4,22 +4,37 @@
 #include <cstddef>
 #include <cstdint>
 #include <initializer_list>
+#include <limits>
 
 #include "metautils.hpp"
 #include "atomic.hpp"
 
-//Режим доступа к регистрам
-struct WriteMode {};
-struct ReadMode {};
-struct ReadWriteMode: public WriteMode, public ReadMode {};
+/*!
+ * \file
+ * \brief Файл с классами для работы с регситрами
+ *
+ * В этом заголовочнике содержатся статические классы для
+ * реализации безопасного доступа к регистрам микроконтроллера.
+ * А так же служебные типы и концепты.
+ */
 
+/// \brief AccessMode тип для WO регистров
+struct WriteMode {};
+/// \brief AccessMode тип для RO регистров
+struct ReadMode {};
+/// \brief AccessMode тип для RW регистров
+struct ReadWriteMode: public WriteMode, public ReadMode {};
+/// \brief Проверяет возможно ли чтение из данного регистра
 template <typename T>
 concept CanRead = std::derived_from<T, ReadMode>;
-
+/// \brief Проверяет  возможна ли запись в данный регистр
 template <typename T>
 concept CanWrite = std::derived_from<T, WriteMode>;
 
-//Тип регистров в зависимости от размера
+/*!
+ * \brief Связывает размер регистра в битах с соответсвующим
+ * типом из stdint.h
+ */
 template <uint32_t size>
 struct RegisterType {};
 
@@ -47,7 +62,18 @@ struct RegisterType<64>
     using Type = uint64_t;
 };
 
-//Класс для работы с регистром, можно передавать список битовых полей для установки и проверки
+/*!
+ * \brief Обеспечивает безопасный доступ к регистрам
+ * микроконтроллера
+ * \warning Данный шаблонный класс разработан для работы вместе
+ * со скриптом RegistersGenerator, подставляющим в шаблонные
+ * параметры информацию из svd файла и автоматически
+ * генерирующим соответствующие заголовочные файлы. Инстанцирование этого
+ * класса "вручную" должно производится только при крайней необходимости.
+ * \tparam address Адрес регистра
+ * \tparam size Размер регистра в битах
+ * \tparam AccessMode Тип доступа (WriteMode, ReadMode или ReadWriteMode)
+ */
 template<uint32_t address, size_t size, typename AccessMode>
 class Register
 {
@@ -55,14 +81,26 @@ public:
     static constexpr auto Address = address;
     using Type = typename RegisterType<size>::Type;
 
-    //Метод будет работать только для регистров, в которые можно записать значение
+    /// \brief Записывает значение в регистр, если регистр позволяет запись
     template<typename T = void>
         requires CanWrite<AccessMode>
     [[gnu::always_inline]] inline static void Set(Type value)
     {
         *reinterpret_cast<Type *>(address) = value;
     }
-    //Метод возвращает целое значение регистра, будет работать только для регистров, которые можно считать
+
+    /*!
+     * \brief Записывает значение в регистр атомарно инструкциями LDREX, STREX.
+     * Работает только с RW регистрами
+     */
+    template<typename T = void>
+        requires CanWrite<AccessMode> && CanRead<AccessMode>
+    [[gnu::always_inline]] inline static void AtomicSet(Type value)
+    {
+        atomic_utils<Type, address>::Set(std::numeric_limits<Type>::max(), value, 0);
+    }
+
+    /// \brief Метод Get возвращает значение регистра, если регистр позволяет чтение
     template<typename T = void>
         requires CanRead<AccessMode>
     [[gnu::always_inline]] inline static Type Get()
@@ -70,44 +108,64 @@ public:
         return *reinterpret_cast<Type *>(address);
     }
 
-    //Метод устанавливает битовые поля используя LDREX, STREX, только если регистр может использоваться для записи
-    template<typename... F>
-        requires CanWrite<AccessMode> && CanRead<AccessMode>
-    [[gnu::always_inline]] inline static void AtomicSetFields()
-    {
-        atomic_utils<Type, address>::Set(getMask<F...>(), getValue<F...>(), 0);
-    }
-
-    //Метод устанавливает битовые поля переданые через пачку, только если регистр может использоваться для записи
-    template<typename... F>
-        requires CanWrite<AccessMode> && (CompatibleField<F, Register<address, size, AccessMode>> && ...)
+    /*!
+     * \brief Метод SetFields записывает значения заданных полей в регистр, если регистр позволяет запись
+     *
+     * Метод принимает список значений полей регистра в виде пакета параметров шаблона,
+     * считывает текущее значение из регистра, рассчитывает итоговое значение с учетом всех полей
+     * и записывает его в регистр. В списке могут быть только значения полей относящихся к данному
+     * регистру, в противном случае код не будет скомпилирован.
+     * \tparam Values Значения полей для записи
+     */
+    template<typename... Values>
+        requires CanWrite<AccessMode> && (CompatibleField<Values, Register<address, size, AccessMode>> && ...)
     [[gnu::always_inline]] inline static void SetFields()
     {
         if constexpr (CanRead<AccessMode>)
         {
-            Type newRegValue = *reinterpret_cast<Type *>(address); //Сохраняем текущее значение регистра
+            Type newRegValue = *reinterpret_cast<Type *>(address);
 
-            newRegValue &= ~getMask<F...>(); //Сбрасываем битовые поля, которые нужно будет установить
-            newRegValue |= getValue<F...>(); //Устанавливаем новые значения битовых полей
-            *reinterpret_cast<Type *>(address) = newRegValue; //Записываем в регистр новое значение
+            newRegValue &= ~getMask<Values...>();
+            newRegValue |= getValue<Values...>();
+            *reinterpret_cast<Type *>(address) = newRegValue;
         }
         else
-            *reinterpret_cast<Type *>(address) = getValue<F...>();
+            *reinterpret_cast<Type *>(address) = getValue<Values...>();
     }
 
-    //Метод IsSet проверяет что все битовые поля из переданной пачки установлены
-    template<typename... F>
-        requires CanRead<AccessMode> && (CompatibleField<F, Register<address, size, AccessMode>> && ...)
+    /*!
+     * \brief То же, что и SetFields, но запись и чтение выполняется инструкциями LDREX, STREX
+     * Работает только с RW регистрами
+     * \tparam Values Значения полей для записи
+     */
+    template<typename... Values>
+        requires CanWrite<AccessMode> && CanRead<AccessMode>
+    [[gnu::always_inline]] inline static void AtomicSetFields()
+    {
+        atomic_utils<Type, address>::Set(getMask<Values...>(), getValue<Values...>(), 0);
+    }
+
+    /*!
+     * \brief Метод IsSetFields проверяет заданны или нет значения перечисленных полей регистра,
+     * если регистр позволяет чтение
+     *
+     * Метод принимает список значений полей регистра в виде пакета параметров шаблона,
+     * считывает текущее значение из регистра, накладывает маску переданных значений полей
+     * и сравнивает значение в регистре с переданными значениями.
+     * При полном соотвествии выводит истину. В списке могут быть только значения полей
+     * относящихся к данному регистру, в противном случае код не будет скомпилирован.
+     * \tparam Values Значения полей для записи
+     */
+    template<typename... Values>
+        requires CanRead<AccessMode> && (CompatibleField<Values, Register<address, size, AccessMode>> && ...)
     [[gnu::always_inline]] inline static bool IsSetFields()
     {
         Type newRegValue = *reinterpret_cast<Type *>(address);
-        return ((newRegValue & getMask<F...>()) == getValue<F...>());
+        return ((newRegValue & getMask<Values...>()) == getValue<Values...>());
     }
 
 private:
-    //Вспомогательный метод, возвращает маску для конктретного битового поля на этапе компиляции.
-    //Метод определен только в случае, если тип битового поля и базовый тип битового поля для регистра совпадают.
-    //Т.е. нельзя устанвоить набор битов не соотвествующих набору для для данного регистра.
+    /// Вспомогательный метод, возвращает маску для конктретного битового поля на этапе компиляции.
     template<typename T>
     static consteval auto getIndividualMask()
     {
@@ -115,22 +173,20 @@ private:
         return result;
     }
 
-    //Вспомогательный метод, расчитывает общую маску для всего набора битовых полей на этапе компиляции.
+    /// Вспомогательный метод, расчитывает общую маску для всего набора битовых полей на этапе компиляции.
     template<typename... F>
     static consteval auto getMask()
     {
-        const auto values = {getIndividualMask<F>()...};  //распаковываем набор битовых полей через список инициализации
+        const auto values = {getIndividualMask<F>()...};
         Type result = 0;
         for (auto const v: values)
         {
-            result |= v;  //для каждого битового поля устанавливаем битовую маску
+            result |= v;
         }
         return result;
     }
 
-    //Вспомогательный метод, возвращает значение для конктретного битового поля на этапе компиляции.
-    //Метод определен только в случае, если тип битового поля и базовый тип битового поля для регистра совпадают.
-    //Т.е. нельзя устанвоить набор битов не соотвествующих набору для для данного регистра.
+    /// Вспомогательный метод, возвращает значение для конктретного битового поля на этапе компиляции.
     template<typename T>
     static consteval auto getIndividualValue()
     {
@@ -138,7 +194,7 @@ private:
         return result;
     }
 
-    //Вспомогательный метод, расчитывает значение которое нужно установить в регистре для всего набора битовых полей
+    /// Вспомогательный метод, расчитывает значение которое нужно установить в регистре для всего набора битовых полей
     template<typename... F>
     static consteval auto getValue()
     {
@@ -153,6 +209,19 @@ private:
 };
 
 //Базовый класс для работы с битовыми полями регистров
+/*!
+ * \brief Обеспечивает безопасный доступ к битовым полям регистров
+ * микроконтроллера
+ * \warning Данный шаблонный класс разработан для работы вместе
+ * со скриптом RegistersGenerator, подставляющим в шаблонные
+ * параметры по информацию из svd файла и автоматически
+ * генерирующим соответствующие заголовочные файлы. Инстанцирование этого
+ * класса "вручную" должно производится только при крайней необходимости.
+ * \tparam Reg Регистр поля
+ * \tparam offset Смещение поля в битах
+ * \tparam size Размер поля в битах
+ * \tparam AccessMode Тип доступа (WriteMode, ReadMode или ReadWriteMode)
+ */
 template<typename Reg, size_t offset, size_t size, typename AccessMode>
 struct RegisterField
 {
@@ -162,17 +231,17 @@ struct RegisterField
     static constexpr RegType Size = size;
     using Access = AccessMode;
 
-    //Метод устанавливает значение битового поля, только в случае, если оно достпуно для записи
+    /// \brief Записывает значение в битовое поле регистра, если регистр позволяет запись
     template<typename T = void>
         requires CanWrite<AccessMode>
     [[gnu::always_inline]] inline static void Set(RegType value)
     {
         if constexpr (CanRead<AccessMode>)
         {
-            RegType newRegValue = *reinterpret_cast<RegType *>(Reg::Address); //Сохраняем текущее значение регистра
+            RegType newRegValue = *reinterpret_cast<RegType *>(Reg::Address);
 
-            newRegValue &= ~(((1 << size) - 1) << offset); //Вначале нужно очистить старое значение битового поля
-            newRegValue |= (value << offset); // Затем установить новое
+            newRegValue &= ~(((1 << size) - 1) << offset);
+            newRegValue |= (value << offset);
 
             *reinterpret_cast<RegType *>(Reg::Address) = newRegValue;
         }
@@ -180,7 +249,9 @@ struct RegisterField
             *reinterpret_cast<RegType *>(Reg::Address) = (value << offset);
     }
 
-    //Метод устанавливает значение битового поля используя LDREX, STREX, только если оно доступно для записи
+    /*!
+     * \brief Записывает значение в битовое поле регистра c использованием LDREX, если регистр позволяет запись
+     */
     template<typename T = void>
         requires CanWrite<AccessMode> && CanRead<AccessMode>
     [[gnu::always_inline]] inline static void AtomicSet(RegType value)

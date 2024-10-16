@@ -51,19 +51,19 @@ concept PinConfiguredAsOutput = requires {
              Configuration::mode == AUX_OPENDRAIN_OUTPUT;
 };
 
-template<typename Configuration>
+template<typename Pin>
 concept CanConfigure = requires {
-    requires Configuration::Policy == PIN_CONFIGURABLE;
+    requires Pin::Configuration::Policy == PIN_CONFIGURABLE;
 };
 
 template<typename Pin>
-concept CanInput = CanConfigure<PinsConfiguration<Pin>> || PinConfiguredAsInput<PinsConfiguration<Pin>>;
+concept CanInput = CanConfigure<Pin> || PinConfiguredAsInput<PinsConfiguration<Pin>>;
 
 template<typename Pin>
-concept CanAnalog = CanConfigure<PinsConfiguration<Pin>> || PinConfiguredAsAnalog<PinsConfiguration<Pin>>;
+concept CanAnalog = CanConfigure<Pin> || PinConfiguredAsAnalog<PinsConfiguration<Pin>>;
 
 template<typename Pin>
-concept CanOutput = CanConfigure<PinsConfiguration<Pin>> || PinConfiguredAsOutput<PinsConfiguration<Pin>>;
+concept CanOutput = CanConfigure<Pin> || PinConfiguredAsOutput<PinsConfiguration<Pin>>;
 
 template<PinMode mode, PinStrenght strenght = NORMAL_STR, PinPolicy policy = PIN_NON_CONFIGURABLE>
 struct StartupConfiguration

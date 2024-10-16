@@ -4,8 +4,8 @@
 #include "metautils.hpp"
 #include "configutils.hpp"
 
-template<typename Interface>
-concept HasClearSet = IsFieldValue<typename Interface::SetOutputValue> && IsFieldValue<typename Interface::ClearOutputValue>;
+template<typename Pin>
+concept HasClearSet = IsFieldValue<typename Pin::SetOutputValue> && IsFieldValue<typename Pin::ClearOutputValue>;
 
 /*
 template<typename Interface>
@@ -21,38 +21,38 @@ concept CompatibleInterface = IsFieldValue<typename Interface::HighOutputValue> 
 
 template<typename Pin>
     //requires CompatibleInterface<Interface<GPIO, pinNum>>
-class Pins
+class PinsControl
 {
 public:
     template<typename T = void>
-        requires CanOutput<Configuration>
+        requires CanOutput<Pin>
     [[gnu::always_inline]] inline static void SetHigh()
     {
-        if constexpr (HasClearSet<Interface>)
-            Interface::SetOutputValue::Set();
+        if constexpr (HasClearSet<Pin>)
+            Pin::SetOutputValue::Set();
         else
-            Interface::HighOutputValue::AtomicSet();
+            Pin::HighOutputValue::AtomicSet();
     }
 
     template<typename T = void>
-        requires CanOutput<Configuration>
+        requires CanOutput<Pin>
     [[gnu::always_inline]] inline static void SetLow()
     {
-        if constexpr (HasClearSet<Interface>)
-            Interface::ClearOutputValue::Set();
+        if constexpr (HasClearSet<Pin>)
+            Pin::ClearOutputValue::Set();
         else
-            Interface::LowOutputValue::AtomicSet();
+            Pin::LowOutputValue::AtomicSet();
     }
 
     template<typename T = void>
-        requires CanOutput<Configuration>
+        requires CanOutput<Pin>
     [[gnu::always_inline]] inline static bool IsSet()
     {
-        return Interface::HighOutputValue::IsSet();
+        return Pin::HighOutputValue::IsSet();
     }
 
     template<typename T = void>
-        requires CanOutput<Configuration> && requires { Interface::OutputField; }
+        requires CanOutput<Pin> && requires { Pin::OutputField; }
     [[gnu::always_inline]] inline static void Toggle()
     {
         Interface::OutputField::AtomicToggle();
