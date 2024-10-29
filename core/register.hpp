@@ -18,11 +18,11 @@
  * А так же служебные типы и концепты.
  */
 
-/// \brief AccessMode тип для WO регистров
+/// \brief Используется в Register как AccessMode тип для WO регистров
 struct WriteMode {};
-/// \brief AccessMode тип для RO регистров
+/// \brief Используется в Register как AccessMode тип для RO регистров
 struct ReadMode {};
-/// \brief AccessMode тип для RW регистров
+/// \brief Используется в Register как AccessMode тип для RW регистров
 struct ReadWriteMode: public WriteMode, public ReadMode {};
 /// \brief Проверяет возможно ли чтение из данного регистра
 template <typename T>
@@ -32,30 +32,30 @@ template <typename T>
 concept CanWrite = std::derived_from<T, WriteMode>;
 
 /*!
- * \brief Связывает размер регистра в битах с соответсвующим
+ * \brief Связывает размер регистра в бит (разряд) с соответсвующим
  * типом из stdint.h
  */
 template <uint32_t size>
 struct RegisterType {};
-
+///\copydoc RegisterType
 template<>
 struct RegisterType<8>
 {
     using Type = uint8_t;
 };
-
+///\copydoc RegisterType
 template<>
 struct RegisterType<16>
 {
     using Type = uint16_t;
 };
-
+///\copydoc RegisterType
 template<>
 struct RegisterType<32>
 {
     using Type = uint32_t;
 };
-
+///\copydoc RegisterType
 template<>
 struct RegisterType<64>
 {
@@ -71,14 +71,16 @@ struct RegisterType<64>
  * генерирующим соответствующие заголовочные файлы. Инстанцирование этого
  * класса "вручную" должно производится только при крайней необходимости.
  * \tparam address Адрес регистра
- * \tparam size Размер регистра в битах
+ * \tparam size Размер регистра в бит
  * \tparam AccessMode Тип доступа (WriteMode, ReadMode или ReadWriteMode)
  */
 template<uint32_t address, size_t size, typename AccessMode>
 class Register
 {
 public:
+    /// \brief Адрес регистра
     static constexpr auto Address = address;
+    /// \brief Тип из stdint.h соотвествествующий разряду регистра
     using Type = typename RegisterType<size>::Type;
 
     /// \brief Записывает значение в регистр, если регистр позволяет запись
@@ -100,7 +102,7 @@ public:
         atomic_utils<Type, address>::Set(std::numeric_limits<Type>::max(), value, 0);
     }
 
-    /// \brief Метод Get возвращает значение регистра, если регистр позволяет чтение
+    /// \brief Возвращает значение регистра, если регистр позволяет чтение
     template<typename T = void>
         requires CanRead<AccessMode>
     [[gnu::always_inline]] inline static Type Get()
@@ -109,7 +111,7 @@ public:
     }
 
     /*!
-     * \brief Метод SetFields записывает значения заданных полей в регистр, если регистр позволяет запись
+     * \brief Записывает значения заданных полей в регистр, если регистр позволяет запись
      *
      * Метод принимает список значений полей регистра в виде пакета параметров шаблона,
      * считывает текущее значение из регистра, рассчитывает итоговое значение с учетом всех полей
@@ -146,7 +148,7 @@ public:
     }
 
     /*!
-     * \brief Метод IsSetFields проверяет заданны или нет значения перечисленных полей регистра,
+     * \brief Проверяет заданны или нет значения перечисленных полей регистра,
      * если регистр позволяет чтение
      *
      * Метод принимает список значений полей регистра в виде пакета параметров шаблона,
@@ -165,7 +167,7 @@ public:
     }
 
 private:
-    /// Вспомогательный метод, возвращает маску для конктретного битового поля на этапе компиляции.
+    /// Возвращает маску для конктретного битового поля на этапе компиляции.
     template<typename T>
     static consteval auto getIndividualMask()
     {
@@ -173,7 +175,7 @@ private:
         return result;
     }
 
-    /// Вспомогательный метод, расчитывает общую маску для всего набора битовых полей на этапе компиляции.
+    /// Расчитывает общую маску для всего набора битовых полей на этапе компиляции.
     template<typename... F>
     static consteval auto getMask()
     {
@@ -186,7 +188,7 @@ private:
         return result;
     }
 
-    /// Вспомогательный метод, возвращает значение для конктретного битового поля на этапе компиляции.
+    /// Возвращает значение для конктретного битового поля на этапе компиляции.
     template<typename T>
     static consteval auto getIndividualValue()
     {
@@ -194,7 +196,7 @@ private:
         return result;
     }
 
-    /// Вспомогательный метод, расчитывает значение которое нужно установить в регистре для всего набора битовых полей
+    /// Расчитывает значение которое нужно установить в регистре для всего набора битовых полей
     template<typename... F>
     static consteval auto getValue()
     {
@@ -208,7 +210,6 @@ private:
     }
 };
 
-//Базовый класс для работы с битовыми полями регистров
 /*!
  * \brief Обеспечивает безопасный доступ к битовым полям регистров
  * микроконтроллера
@@ -218,17 +219,22 @@ private:
  * генерирующим соответствующие заголовочные файлы. Инстанцирование этого
  * класса "вручную" должно производится только при крайней необходимости.
  * \tparam Reg Регистр поля
- * \tparam offset Смещение поля в битах
- * \tparam size Размер поля в битах
+ * \tparam offset Смещение поля в бит
+ * \tparam size Размер поля в бит
  * \tparam AccessMode Тип доступа (WriteMode, ReadMode или ReadWriteMode)
  */
 template<typename Reg, size_t offset, size_t size, typename AccessMode>
 struct RegisterField
 {
+    /// \brief Register::Type
     using RegType = typename Reg::Type;
+    /// \brief Связанный регистр
     using Register = Reg;
+    /// \brief Смещение битового поля в бит от 0
     static constexpr RegType Offset = offset;
+    /// \brief Размер битового поля в бит
     static constexpr RegType Size = size;
+    /// \brief Тип доступа (WriteMode, ReadMode или ReadWriteMode)
     using Access = AccessMode;
 
     /// \brief Записывает значение в битовое поле регистра, если регистр позволяет запись
@@ -249,9 +255,7 @@ struct RegisterField
             *reinterpret_cast<RegType *>(Reg::Address) = (value << offset);
     }
 
-    /*!
-     * \brief Записывает значение в битовое поле регистра c использованием LDREX, если регистр позволяет запись
-     */
+    /// \brief Записывает значение в битовое поле регистра c использованием LDREX, STREX
     template<typename T = void>
         requires CanWrite<AccessMode> && CanRead<AccessMode>
     [[gnu::always_inline]] inline static void AtomicSet(RegType value)
@@ -259,6 +263,10 @@ struct RegisterField
         atomic_utils<RegType, Reg::Address>::Set((1 << size) - 1, value, offset);
     }
 
+    /*!
+     * \brief Инвертирует значение битового поля регистра,
+     * если регистр позволяет и чтение, и запись
+     */
     template<typename T = void>
         requires CanWrite<AccessMode> && CanRead<AccessMode>
     [[gnu::always_inline]] inline static void Toggle()
@@ -270,6 +278,7 @@ struct RegisterField
         *reinterpret_cast<RegType *>(Reg::Address) = newRegValue;
     }
 
+    /// \brief Инвертирует значение битового поля регистра c использованием LDREX, STREX
     template<typename T = void>
         requires CanWrite<AccessMode> && CanRead<AccessMode>
     [[gnu::always_inline]] inline static void AtomicToggle()
@@ -277,7 +286,7 @@ struct RegisterField
         atomic_utils<RegType, Reg::Address>::Toggle((1 << size) - 1, offset);
     }
 
-    //Метод устанавливает проверяет установлено ли значение битового поля
+    /// \brief Возвращает значение битового поля регистра
     template<typename T = void>
         requires CanRead<AccessMode>
     [[gnu::always_inline]] inline static RegType Get()
