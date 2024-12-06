@@ -11,7 +11,7 @@
 
 /*!
  * \file
- * \brief Файл с классами для работы с регситрами
+ * \brief Файл с классами для работы с регистрами
  *
  * В этом заголовочнике содержатся статические классы для
  * реализации безопасного доступа к регистрам микроконтроллера.
@@ -19,17 +19,17 @@
  */
 
 /// \brief Используется в Register как AccessMode тип для WO регистров
-struct WriteMode {};
+struct WriteOnlyT {};
 /// \brief Используется в Register как AccessMode тип для RO регистров
-struct ReadMode {};
+struct ReadOnlyT {};
 /// \brief Используется в Register как AccessMode тип для RW регистров
-struct ReadWriteMode: public WriteMode, public ReadMode {};
-/// \brief Проверяет возможно ли чтение из данного регистра
+struct ReadWriteT : public WriteOnlyT, public ReadOnlyT {};
+/// \brief Используется в Register для проверки возможности чтения
 template <typename T>
-concept CanRead = std::derived_from<T, ReadMode>;
-/// \brief Проверяет  возможна ли запись в данный регистр
+concept CanRead = std::derived_from<T, ReadOnlyT>;
+/// \brief Используется в Register для проверки возможности записи
 template <typename T>
-concept CanWrite = std::derived_from<T, WriteMode>;
+concept CanWrite = std::derived_from<T, WriteOnlyT>;
 
 /*!
  * \brief Связывает размер регистра в бит (разряд) с соответсвующим
@@ -72,13 +72,12 @@ struct RegisterType<64>
  * класса "вручную" должно производится только при крайней необходимости.
  * \tparam address Адрес регистра
  * \tparam size Размер регистра в бит
- * \tparam AccessMode Тип доступа (WriteMode, ReadMode или ReadWriteMode)
+ * \tparam AccessMode Тип доступа к регистру
  */
 template<uint32_t address, size_t size, typename AccessMode>
 class Register
 {
 public:
-    /// \brief Адрес регистра
     static constexpr auto Address = address;
     /// \brief Тип из stdint.h соотвествествующий разряду регистра
     using Type = typename RegisterType<size>::Type;
