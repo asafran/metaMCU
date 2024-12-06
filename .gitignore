@@ -34,3 +34,5 @@ docs/
 *.out
 *.app
 *.elf
+
+*.user
