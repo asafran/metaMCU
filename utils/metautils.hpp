@@ -43,9 +43,6 @@ concept IsFieldValue = requires (Value v)
     meta_utils::isFieldValue(v);
 };
 
-template<typename Value, typename Register>
-concept CompatibleField = IsFieldValue<Value> && std::derived_from<typename Value::Register, Register>;
-
 template<typename... Xs>
 concept NoDuplicates = (... && (meta_utils::countSameType(meta_utils::TypeContainer<Xs...>(), meta_utils::TypeContainer<Xs>()) == 1));
 

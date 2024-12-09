@@ -1,41 +1,155 @@
 #ifndef FIELD_HPP
 #define FIELD_HPP
 
-//Базовый класс для работы с битовыми полями регистров
+#include <concepts>
+#include <cstddef>
 
-template<typename Field, typename Field::Register::Type value>
-struct FieldValueBase
-{
-    using Register = typename Field::Register;
-    using RegType = typename Field::Register::Type;
-    //Метод устанавливает значение битового поля, только в случае, если оно достпуно для записи
-    [[gnu::always_inline]] static void Set()
+#include "register.hpp"
+
+namespace metaMCU {
+
+    /*!
+     * \brief Обеспечивает безопасный доступ к битовым полям регистров
+     * микроконтроллера
+     * \warning Данный шаблонный класс разработан для работы вместе
+     * со скриптом RegistersGenerator, подставляющим в шаблонные
+     * параметры по информацию из svd файла и автоматически
+     * генерирующим соответствующие заголовочные файлы. Инстанцирование этого
+     * класса "вручную" должно производится только при крайней необходимости.
+     * \tparam Reg Регистр поля
+     * \tparam offset Смещение поля в бит
+     * \tparam size Размер поля в бит
+     * \tparam AccessMode Тип доступа (WriteMode, ReadMode или ReadWriteMode)
+     */
+    template<typename Register, size_t offset, size_t size, typename Access>
+    struct RegisterField
     {
-        Field::Set(value);
-    }
+        /// \brief Тип из stdint.h соотвествествующий разряду регистра
+        using Value_t = typename Register::Value_t;
 
-    //Метод устанавливает значение битового поля используя LDREX, STREX, только если оно доступно для записи
-    [[gnu::always_inline]] inline static void AtomicSet()
+        /// \brief Смещение битового поля в бит от 0
+        static consteval auto BitOffset()
+        {
+            return offset;
+        }
+
+        /// \brief Размер битового поля в бит
+        static consteval auto Size()
+        {
+            return size;
+        }
+
+        /// \brief Маска битового поля
+        static consteval auto Mask()
+        {
+            return ((1 << size) - 1) << offset;
+        }
+
+        /// \brief Проверяет принадлежность поля данному регистру
+        template<typename R>
+        static consteval auto IsRegisterCompatible()
+        {
+            return std::derived_from<Register, R>;
+        }
+
+        /// \brief Записывает значение в битовое поле регистра, если регистр позволяет запись
+        template<typename T = void>
+            requires Can_read<Access> && Can_write<Access>
+        [[gnu::always_inline]] inline static void Set(Register::Value_t value)
+        {
+            Register::SetResetBits((value << BitOffset()), Mask());
+        }
+
+        /// \brief Записывает значение в битовое поле регистра, если регистр позволяет запись
+        template<typename T = void>
+            requires Can_write<Access>
+        [[gnu::always_inline]] inline static void SetDirectly(Register::Value_t value)
+        {
+            Register::Set(value << BitOffset());
+        }
+
+        /// \brief Записывает значение в битовое поле регистра c использованием LDREX, STREX
+        template<typename T = void>
+            requires Can_write<Access> && Can_read<Access>
+        [[gnu::always_inline]] inline static void AtomicSet(RegType value)
+        {
+            atomic_utils<RegType, Reg::Address>::Set(Mask, value, offset);
+        }
+
+        /*!
+             * \brief Инвертирует значение битового поля регистра,
+             * если регистр позволяет и чтение, и запись
+             */
+        template<typename T = void>
+            requires Can_write<Access> && Can_read<Access>
+        [[gnu::always_inline]] inline static void Toggle()
+        {
+            Register::Toggle(Mask());
+        }
+
+        /// \brief Инвертирует значение битового поля регистра c использованием LDREX, STREX
+        template<typename T = void>
+            requires Can_write<Access> && Can_read<Access>
+        [[gnu::always_inline]] inline static void AtomicToggle()
+        {
+            atomic_utils<RegType, Reg::Address>::Toggle((1 << size) - 1, offset);
+        }
+
+        /// \brief Возвращает значение битового поля регистра
+        template<typename T = void>
+            requires Can_read<Access>
+        [[gnu::always_inline]] inline static Register::Value_t Get()
+        {
+            return (Register::Get() & Mask()) >> offset;
+        }
+    };
+
+    struct FieldValueBase {};
+
+    template<typename Field, typename Field::Size_t value>
+    struct FieldValue : FieldValueBase
     {
-        Field::AtomicSet(value);
-    }
+        /// \brief Проверяет принадлежность поля данному регистру
+        template<typename R>
+        static consteval bool IsRegisterCompatible()
+        {
+            return Field::IsRegisterCompatible();
+        }
 
-    //Метод устанавливает проверяет установлено ли значение битового поля
-    [[gnu::always_inline]] inline static bool IsSet()
-    {
-        return Field::Get() == (value << Field::Offset);
-    }
-};
+        /// \brief Смещение битового поля в бит от 0
+        static consteval auto BitOffset()
+        {
+            return Field::BitOffset();
+        }
 
-//Класс для работы с битовыми полями. Добавился тип Base, который необходим для того, чтобы проверить, что
-//В регистре устанавливаются те битовые поля, которые допустимы для данного регистра
-template<typename Field, typename Field::Register::Type value>
-struct FieldValue : public FieldValueBase<Field, value>
-{
-    constexpr static auto Mask = static_cast<Field::Register::Type>(1U << Field::Size) - 1U;
-    constexpr static auto Value = value;
-    constexpr static auto Offset = Field::Offset;
-    using Access = typename Field::Access;
-};
+        /// \brief Размер битового поля в бит
+        static consteval auto Size()
+        {
+            return Field::Size();
+        }
+
+        /// \brief Маска битового поля
+        static consteval auto Mask()
+        {
+            return Field::Mask();
+        }
+
+        /// \brief Значение битового поля без смещения
+        static consteval auto Value()
+        {
+            return value;
+        }
+
+        [[gnu::always_inline]] static void Set()
+        {
+            Field::Set(value);
+        }
+
+        [[gnu::always_inline]] inline static bool IsSet()
+        {
+            return Field::Get() == (value << Field::Offset);
+        }
+    };
+}
 
 #endif // FIELD_HPP
