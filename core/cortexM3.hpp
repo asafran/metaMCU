@@ -14,54 +14,65 @@
 
 namespace metaMCU {
 
-    template <size_t address, size_t size, typename Access>
-    struct CortexM3Register : Register<address, size, Access>
+    template <size_t address, typename Value, typename Access>
+    class Register_CortexM3 : Register<address, Value, Access>
     {
+    private:
+        static constexpr size_t peripheral_base_addr = 0x4;
+        static constexpr size_t bit_band_base_addr = 0x4;
+
     public:
-        static constexpr size_t Peripheral_base_addr = 0x4;
-
-        static constexpr size_t Bit_band_base_addr = 0x4;
-
-        using Value_t = typename Register<address, size, Access>::Value_t;
+        using Value_t = typename Register<address, Value, Access>::Value_t;
 
         template<typename T = void>
             requires Can_write<Access> && Can_read<Access>
-        [[gnu::always_inline]] inline static void CompareExchangeSetReset(Value_t set, Value_t reset)
+        [[gnu::always_inline]] inline static void bits_set_clear_atomic(Value_t set, Value_t clear)
         {
             Value_t new_value;
 
             do
             {
-                new_value = LDREX(reinterpret_cast<volatile Value_t *>(address));
+                new_value = LDREX(reinterpret_cast<volatile Value_t*>(address));
                 new_value &= ~reset;
                 new_value |= set;
             }
-            while(STREX(new_value, reinterpret_cast<volatile Value_t *>(address)));
+            while(STREX(new_value, reinterpret_cast<volatile Value_t*>(address)));
         }
 
         template<typename T = void>
             requires Can_write<Access> && Can_read<Access>
-        [[gnu::always_inline]] inline static void CompareExchangeToggle(Value_t mask)
+        [[gnu::always_inline]] inline static void bits_toggle_atomic(Value_t mask)
         {
             Value_t new_value;
 
             do
             {
-                new_value = LDREX(reinterpret_cast<volatile Value_t *>(address));
+                new_value = LDREX(reinterpret_cast<volatile Value_t*>(address));
                 new_value ^= mask;
             }
-            while(STREX(new_value, reinterpret_cast<volatile Value_t *>(address)));
+            while(STREX(new_value, reinterpret_cast<volatile Value_t*>(address)));
         }
 
         template<typename T = void>
             requires Can_write<Access>
-        [[gnu::always_inline]] inline static void BitBand(Value_t value, Value_t offset)
+        [[gnu::always_inline]] inline static void bit_band_set(size_t bit_offset)
         {
-            constexpr auto bit_word_addr = Bit_band_base_addr + 32 * (address - Peripheral_base_addr) + 4 * offset;
-            *reinterpret_cast<volatile Value_t *>(bit_word_addr) = value;
+            *reinterpret_cast<volatile Value_t*>(bit_band_word_addr(offset)) = 0x01;
+        }
+
+        template<typename T = void>
+            requires Can_write<Access>
+        [[gnu::always_inline]] inline static void bit_band_clear(size_t bit_offset)
+        {
+            *reinterpret_cast<volatile Value_t*>(bit_band_word_addr(offset)) = 0x00;
         }
 
     private:
+        static consteval auto bit_band_word_addr(size_t offset)
+        {
+            return bit_band_base_addr + 32 * (address - peripheral_base_addr) + 4 * offset;
+        }
+
         [[gnu::always_inline]] inline static Value_t LDREX(volatile Value_t *addr)
         {
             Value_t result;
@@ -82,6 +93,12 @@ namespace metaMCU {
         {
             __asm volatile ("clrex" ::: "memory");
         }
+    };
+
+    template<typename Register, size_t offset, size_t size, typename Access>
+    class Field
+    {
+
     };
 }
 

@@ -52,41 +52,17 @@ namespace metaMCU {
      * генерирующим соответствующие заголовочные файлы. Инстанцирование этого
      * класса "вручную" должно производится только при крайней необходимости.
      * \tparam address Адрес регистра
-     * \tparam size Размер регистра в бит
-     * \tparam AccessT Тип доступа к регистру
+     * \tparam Value Тип из stdint.h соотвествествующий разряду регистра
+     * \tparam Access Тип доступа к регистру
      */
-    template<size_t address, size_t size, typename Access>
-    struct Register
+    template<size_t address, typename Value, typename Access>
+    class Register
     {
-    private:
-        template <uint32_t bits>
-        struct Match_Value_t {};
-        template<>
-        struct Match_Value_t<8>
-        {
-            using Type = uint8_t;
-        };
-        template<>
-        struct Match_Value_t<16>
-        {
-            using Type = uint16_t;
-        };
-        template<>
-        struct Match_Value_t<32>
-        {
-            using Type = uint32_t;
-        };
-        template<>
-        struct Match_Value_t<64>
-        {
-            using Type = uint64_t;
-        };
     public:
-        /// \brief Тип из stdint.h соотвествествующий разряду регистра
-        using Value_t = typename Match_Value_t<size>::Type;
+        using Value_t = Value;
 
         /// \brief Адрес регистра
-        static consteval auto Address()
+        static consteval auto address()
         {
             return address;
         }
@@ -94,23 +70,23 @@ namespace metaMCU {
         /// \brief Записывает значение в регистр, если регистр позволяет запись
         template<typename T = void>
             requires Can_write<Access>
-        [[gnu::always_inline]] inline static void Set(Value_t value)
+        [[gnu::always_inline]] inline static void write(Value_t value)
         {
-            *reinterpret_cast<volatile Value_t *>(address) = value;
+            *reinterpret_cast<volatile Value_t*>(address) = value;
         }
 
         /// \brief Возвращает значение регистра, если регистр позволяет чтение
         template<typename T = void>
             requires Can_read<Access>
-        [[gnu::always_inline]] inline static Value_t Get()
+        [[gnu::always_inline]] inline static Value_t read()
         {
-            return *reinterpret_cast<volatile Value_t *>(address);
+            return *reinterpret_cast<volatile Value_t*>(address);
         }
 
         /// \brief Устанавливает и сбрасывает данные биты, если регистр позволяет и чтение, и запись
         template<typename T = void>
             requires Can_write<Access> && Can_read<Access>
-        [[gnu::always_inline]] inline static void SetResetBits(Value_t set, Value_t reset)
+        [[gnu::always_inline]] inline static void bits_set_clear(Value_t set, Value_t clear)
         {
             auto new_value = Get();
             new_value &= ~reset;
@@ -121,7 +97,7 @@ namespace metaMCU {
         /// \brief Инвертирует значения бит по маске, если регистр позволяет и чтение, и запись
         template<typename T = void>
             requires Can_write<Access> && Can_read<Access>
-        [[gnu::always_inline]] inline static void ToggleBits(Value_t mask = std::numeric_limits<Value_t>::max())
+        [[gnu::always_inline]] inline static void bits_toggle(Value_t mask = std::numeric_limits<Value_t>::max())
         {
             auto new_value = Get();
             new_value ^= mask;
@@ -140,7 +116,7 @@ namespace metaMCU {
          */
         template<typename... Values>
             requires Register_compatible_values<Register<address, size, Access>, Values...>
-        [[gnu::always_inline]] inline static void SetValues()
+        [[gnu::always_inline]] inline static void values_set()
         {
             constexpr auto mask = getMask<Values...>();
             constexpr auto value = getValue<Values...>();
@@ -158,7 +134,7 @@ namespace metaMCU {
          */
         template<typename... Values>
             requires Register_compatible_values<Register<address, size, Access>, Values...>
-        [[gnu::always_inline]] inline static void SetValuesDirectly()
+        [[gnu::always_inline]] inline static void values_write()
         {
             Set(getValue<Values...>());
         }
@@ -176,7 +152,7 @@ namespace metaMCU {
          */
         template<typename... Values>
             requires Register_compatible_values<Register<address, size, Access>, Values...>
-        [[gnu::always_inline]] inline static bool IsSetFields()
+        [[gnu::always_inline]] inline static bool values_is_set()
         {
             auto register_value = Get();
             constexpr auto values_mask = calculateMask<Values...>();
@@ -185,13 +161,6 @@ namespace metaMCU {
         }
 
     private:
-        /// Возвращает маску для конктретного битового поля на этапе компиляции.
-        template<typename Field>
-        static consteval auto getIndividualMask()
-        {
-            Value_t result = Field::Mask << Field::Offset;
-            return result;
-        }
 
         /// Расчитывает общую маску для всего набора битовых полей на этапе компиляции.
         template<typename... Values>
@@ -203,14 +172,6 @@ namespace metaMCU {
             {
                 result |= v;
             }
-            return result;
-        }
-
-        /// Возвращает значение для конктретного битового поля на этапе компиляции.
-        template<typename T>
-        static consteval auto getIndividualValue()
-        {
-            Value_t result = T::Value << T::Offset;
             return result;
         }
 
