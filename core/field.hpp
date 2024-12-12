@@ -6,7 +6,7 @@
 
 #include "register.hpp"
 
-namespace metaMCU {
+namespace metaMCU::core {
 
     /// \brief Проверка возможности атомарной записи в регистр
     template<typename Register>
@@ -37,8 +37,8 @@ namespace metaMCU {
      * \tparam size Размер поля в бит
      * \tparam Access Тип доступа (WriteMode, ReadMode или ReadWriteMode)
      */
-    template<typename Register, size_t offset, size_t size, typename Access>
-    class Field
+    template<typename Register, size_t Offset, size_t Size, typename Access>
+    class Field : private Register
     {
     public:
         using Value_t = typename Register::Value_t;
@@ -46,13 +46,13 @@ namespace metaMCU {
         /// \brief Смещение поля в бит от 0
         static consteval auto bit_offset()
         {
-            return offset;
+            return Offset;
         }
 
         /// \brief Размер поля в бит
         static consteval auto size()
         {
-            return size;
+            return Size;
         }
 
         /// \brief Маска битового поля
@@ -61,87 +61,49 @@ namespace metaMCU {
             return ((1 << size()) - 1) << bit_offset();
         }
 
-        /// \brief Проверяет принадлежность поля данному регистру
-        template<typename R>
-        static consteval bool register_is_compatible()
-        {
-            return std::derived_from<Register, R>;
-        }
-
     protected:
         /// \brief Записывает значение в битовое поле регистра, если регистр позволяет запись
-        template<Value_t value>
+        template<typename Value>
             requires Can_read<Access> && Can_write<Access>
         [[gnu::always_inline]] inline static void set()
         {
-            if constexpr(Can_bit_band<Register> && size() == 1)
-                value ? Register::bit_band_set(offset()) : Register::bit_band_reset(offset());
-            else
-                Register::bits_set_clear((value << bit_offset()), mask());
+            Register::template values_set<Value>();
         }
 
         /// \brief Записывает значение в битовое поле регистра, если регистр позволяет запись
-        template<typename T = void>
+        template<typename Value>
             requires Can_write<Access>
-        [[gnu::always_inline]] inline static void write(Value_t value)
+        [[gnu::always_inline]] inline static void write()
         {
-            Register::write(value << bit_offset());
-        }
-
-        /// \brief Записывает значение в битовое поле регистра c использованием LDREX, STREX
-        template<typename T = void>
-            requires Can_write<Access> && Can_read<Access>
-        [[gnu::always_inline]] inline static void set_atomic(Value_t value)
-        {
-            Register::bits_set_clear_atomic((value << bit_offset()), mask())
+            Register::template values_write<Value>();
         }
 
         /// \brief Возвращает значение битового поля регистра
-        template<typename T = void>
+        template<typename Value>
             requires Can_read<Access>
-        [[gnu::always_inline]] inline static Register::Value_t Get()
+        [[gnu::always_inline]] inline static Register::Value_t is_set()
         {
-            return (Register::Get() & Mask()) >> offset;
+            Register::template values_is_set<Value>();
         }
     };
 
-    template<typename Field, typename Field::Size_t value>
+    template<typename Field, typename Field::Size_t Value>
     class Field_value : public Field
     {
         /// \brief Значение битового поля без смещения
-        static consteval auto Value()
+        static consteval auto value()
         {
-            return value;
+            return Value;
         }
 
-        [[gnu::always_inline]] static void Set()
+        [[gnu::always_inline]] static void set()
         {
-            Field::Set(value);
+            Field::template set<Field_value>();
         }
 
-        [[gnu::always_inline]] inline static bool IsSet()
+        [[gnu::always_inline]] inline static bool is_set()
         {
-            return Field::Get() == (value << Field::Offset);
-        }
-    };
-
-    template<typename Field, typename Field::Size_t value>
-    class Field_value : public Field
-    {
-        /// \brief Значение битового поля без смещения
-        static consteval auto Value()
-        {
-            return value;
-        }
-
-        [[gnu::always_inline]] static void Set()
-        {
-            Field::Set(value);
-        }
-
-        [[gnu::always_inline]] inline static bool IsSet()
-        {
-            return Field::Get() == (value << Field::Offset);
+            return Field::template is_set<Field_value>();
         }
     };
 }
