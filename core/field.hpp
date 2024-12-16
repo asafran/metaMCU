@@ -38,7 +38,7 @@ namespace metaMCU::core {
      * \tparam Access Тип доступа (WriteMode, ReadMode или ReadWriteMode)
      */
     template<typename Register, size_t Offset, size_t Size, typename Access>
-    class Field : private Register
+    class Field
     {
     public:
         using Value_t = typename Register::Value_t;
@@ -61,13 +61,12 @@ namespace metaMCU::core {
             return ((1 << size()) - 1) << bit_offset();
         }
 
-    protected:
         /// \brief Записывает значение в битовое поле регистра, если регистр позволяет запись
         template<typename Value>
             requires Can_read<Access> && Can_write<Access>
         [[gnu::always_inline]] inline static void set()
         {
-            Register::template values_set<Value>();
+            //Register::template values_set<Value>();
         }
 
         /// \brief Записывает значение в битовое поле регистра, если регистр позволяет запись
@@ -87,9 +86,10 @@ namespace metaMCU::core {
         }
     };
 
-    template<typename Field, typename Field::Size_t Value>
-    class Field_value : public Field
+    template<typename Field, int Value>
+    class Field_value
     {
+    public:
         /// \brief Значение битового поля без смещения
         static consteval auto value()
         {
