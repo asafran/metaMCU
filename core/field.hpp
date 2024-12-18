@@ -38,7 +38,7 @@ namespace metaMCU::core {
      * \tparam Access Тип доступа (WriteMode, ReadMode или ReadWriteMode)
      */
     template<typename Register, size_t Offset, size_t Size, typename Access>
-    class Field
+    class Field : protected Register
     {
     public:
         using Value_t = typename Register::Value_t;
@@ -86,8 +86,8 @@ namespace metaMCU::core {
         }
     };
 
-    template<typename Field, int Value>
-    class Field_value
+    template<typename Field, Field::Value_t Value>
+    class Field_value : public Field
     {
     public:
         /// \brief Значение битового поля без смещения

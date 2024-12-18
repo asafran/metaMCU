@@ -61,6 +61,8 @@ namespace metaMCU {
         class Register
         {
         public:
+            consteval Register() {}
+
             using Value_t = Value;
 
             /// \brief Адрес регистра
