@@ -24,6 +24,14 @@ namespace metaMCU {
     struct Read_only_t {};
     /// \brief Используется в Register как AccessT тип для RW регистров
     struct Read_write_t : public Write_only_t, public Read_only_t {};
+
+    enum Access
+    {
+        READ_ONLY,
+        WRITE_ONLY,
+        READ_WRITE
+    };
+
     /// \brief Используется в Register для проверки возможности чтения
     template <typename T>
     concept Can_read = std::derived_from<T, Read_only_t>;
@@ -57,32 +65,39 @@ namespace metaMCU {
          * \tparam Value Тип из stdint.h соотвествествующий разряду регистра
          * \tparam Access Тип доступа к регистру
          */
-        template<size_t Address, typename Value, typename Access>
+        template<typename V>
         class Register
         {
+        private:
+            size_t Address;
+            Access acc;
         public:
-            consteval Register() {}
+            consteval Register(size_t address, Access access_type)
+            {
+                Address = address;
+                acc = access_type;
+            }
 
-            using Value_t = Value;
+            using Value_t = V;
 
             /// \brief Адрес регистра
-            static consteval auto address()
+            consteval auto address()
             {
                 return Address;
             }
 
             /// \brief Записывает значение в регистр, если регистр позволяет запись
             template<typename T = void>
-                requires Can_write<Access>
-            [[gnu::always_inline]] inline static void write(Value_t value)
+                requires (acc == WRITE_ONLY || acc == READ_WRITE)
+            [[gnu::always_inline]] inline void write(Value_t value) const
             {
                 *reinterpret_cast<volatile Value_t*>(Address) = value;
             }
 
             /// \brief Возвращает значение регистра, если регистр позволяет чтение
             template<typename T = void>
-                requires Can_read<Access>
-            [[gnu::always_inline]] inline static Value_t read()
+                requires (acc == READ_ONLY || acc == READ_WRITE)
+            [[gnu::always_inline]] inline Value_t read()
             {
                 return *reinterpret_cast<volatile Value_t*>(Address);
             }
