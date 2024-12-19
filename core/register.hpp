@@ -86,16 +86,6 @@ namespace metaMCU {
             {
                 return *reinterpret_cast<volatile Value_t*>(Address);
             }
-
-            /// \brief Инвертирует значения бит по маске, если регистр позволяет и чтение, и запись
-            template<typename T = void>
-                requires Can_write<Access> && Can_read<Access>
-            [[gnu::always_inline]] inline static void bits_toggle(Value_t mask = std::numeric_limits<Value_t>::max())
-            {
-                auto new_value = read();
-                new_value ^= mask;
-                write(new_value);
-            }
         };
     }
 }

@@ -1,8 +1,9 @@
 #ifndef CORTEXM3_HPP
 #define CORTEXM3_HPP
 
-#include "field.hpp"
 #include "register.hpp"
+#include "field.hpp"
+#include "value.hpp"
 
 /*!
  * \file
@@ -15,44 +16,38 @@
 
 namespace metaMCU::CortexM3 {
 
-    template <size_t address, typename Value, typename Access>
-    class Register : public core::Register<address, Value, Access>
+    template<typename T>
+    consteval bool is_single_bit (T mask)
+    {
+        return std::popcount(mask) == 1;
+    }
+
+    template<size_t Address, typename Value, typename Access>
+    using Register = core::Register<Address, Value, Access>;
+
+    template<typename Register, Register::Value_t Offset, Register::Value_t Mask, typename Access>
+    class Field : public core::Field<Register, Offset, Mask, Access>
     {
     public:
-        using Value_t = typename core::Register<address, Value, Access>::Value_t;
+        using Value_t = core::Field<Register, Offset, Mask, Access>::Value_t;
 
-        template<typename... Values>
-            requires Can_write<Access> && Can_read<Access>
-        [[gnu::always_inline]] inline static void values_set_atomic()
+        /// \brief Записывает значение в битовое поле регистра c использованием LDREX, STREX
+        template<typename T = void>
+            requires Can_read<Access> && Can_write<Access>
+        [[gnu::always_inline]] inline static void set_atomic(Value_t value)
         {
-            Value_t new_value;
+            Value_t register_value;
 
             do
             {
-                new_value = LDREX(reinterpret_cast<volatile Value_t*>(address));
-                new_value &= ~calculateMask<Values...>();
-                new_value |= accumulateValues<Values...>();
+                register_value = LDREX(reinterpret_cast<volatile Value_t*>(Register::address()));
+                register_value &= ~Field::mask_with_offset();
+                register_value |= (value << Offset);
             }
-            while(STREX(new_value, reinterpret_cast<volatile Value_t*>(address)));
-        }
-
-        template<typename T = void>
-            requires Can_write<Access>
-        [[gnu::always_inline]] inline static void bit_band_set(size_t bit_offset)
-        {
-            *reinterpret_cast<volatile Value_t*>(bit_band_word_addr(offset)) = 0x01;
-        }
-
-        template<typename T = void>
-            requires Can_write<Access>
-        [[gnu::always_inline]] inline static void bit_band_clear(size_t bit_offset)
-        {
-            *reinterpret_cast<volatile Value_t*>(bit_band_word_addr(offset)) = 0x00;
+            while(STREX(register_value, reinterpret_cast<volatile Value_t*>(Register::address())));
         }
 
     private:
-
-
         [[gnu::always_inline]] inline static Value_t LDREX(volatile Value_t *addr)
         {
             Value_t result;
@@ -73,24 +68,23 @@ namespace metaMCU::CortexM3 {
         {
             __asm volatile ("clrex" ::: "memory");
         }
-    };
 
-    template<typename Register, size_t Offset, size_t Size, typename Access>
-    class Field : public core::Field<Register, Offset, Size, Access>
-    {
-    protected:
-        /// \brief Записывает значение в битовое поле регистра c использованием LDREX, STREX
-        template<typename Value>
-            requires Can_write<Access> && Can_read<Access>
-        [[gnu::always_inline]] inline static void set_atomic()
+    public:
+        template<typename F1, typename F2>
+        consteval auto operator|(this F1 lhs, F2 rhs)
         {
-            Register::template values_set_atomic<Value>();
+            constexpr auto offset = 0;
+            constexpr auto mask = lhs.mask_with_offset() | rhs.mask_with_offset();
+            return Field<Register, offset, mask, Access>();
         }
+
+        template<typename R, R::Value_t O, R::Value_t M, typename A>
+        friend class Field;
     };
 
-    template<typename Register, size_t Offset, typename Access>
-        requires Can_write<Access>
-    class Field<Register, Offset, 1, Access> : public core::Field<Register, Offset, 1, Access>
+    template<typename Register, Register::Value_t Offset, Register::Value_t Mask, typename Access>
+        requires Can_write<Access> && (is_single_bit(Mask))
+    class Field<Register, Offset, Mask, Access> : public core::Field<Register, Offset, Mask, Access>
     {
     public:
         using Value_t = typename Register::Value_t;
@@ -105,48 +99,43 @@ namespace metaMCU::CortexM3 {
         }
 
     protected:
-        template<typename Val>
-        [[gnu::always_inline]] inline static void set()
+        [[gnu::always_inline]] inline static void set(Value_t value)
         {
-            *reinterpret_cast<volatile Value_t*>(bit_band_word_addr()) = Val::value();
+            *reinterpret_cast<volatile Value_t*>(bit_band_word_addr()) = value;
         }
 
-        template<typename Value>
-        [[gnu::always_inline]] inline static void write()
+        [[gnu::always_inline]] inline static void write(Value_t value)
         {
-            set();
+            set(value);
         }
 
-        template<typename Value>
-        [[gnu::always_inline]] inline static void set_atomic()
+        [[gnu::always_inline]] inline static void set_atomic(Value_t value)
         {
-            set();
+            set(value);
         }
+
+
     };
 
-    template<typename Field, typename Field::Size_t Value>
-    class Field_value : public Field
+    template<typename Field, typename Field::Value_t Value>
+    class Field_value : public core::Field_value<Field, Value>
     {
-        /// \brief Значение битового поля без смещения
-        static consteval auto value()
-        {
-            return Value;
-        }
-
-        [[gnu::always_inline]] static void set()
-        {
-            Field::template set<Field_value>();
-        }
-
+    public:
         [[gnu::always_inline]] inline static void set_atomic()
         {
-            Field::template set_atomic<Field_value>();
+            Field::set_atomic(Value);
         }
 
-        [[gnu::always_inline]] inline static bool is_set()
+        template<typename F1, F1::Value_t V1, typename F2, F2::Value_t V2>
+        consteval auto operator|(this Field_value<F1, V1> lhs, Field_value<F2, V2> rhs)
         {
-            return Field::template is_set<Field_value>();
+            constexpr auto value = lhs.value() | rhs.value();
+            constexpr auto field = F1() | F2();
+            return Field_value<decltype(field), value>();
         }
+
+        template<typename F, F::Value_t V>
+        friend class Field_value;
     };
 }
 
